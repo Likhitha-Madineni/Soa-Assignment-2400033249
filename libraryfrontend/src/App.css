@@ -1,0 +1,136 @@
+
+/* Main application container */
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Main page heading */
+.page-heading {
+  text-align: center;
+  padding: 25px 0;
+}
+
+.page-heading h2 {
+  color: #0d47a1;
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.page-heading p {
+  color: #6c757d;
+  margin-bottom: 0;
+}
+
+/* Cards and sections */
+.card {
+  border: none;
+  border-radius: 12px;
+  overflow: hidden;
+  background-color: #ffffff;
+}
+
+.card-header {
+  padding: 16px 20px;
+  font-weight: 600;
+}
+
+.card-body {
+  padding: 22px;
+}
+
+/* Form fields */
+.form-label {
+  font-weight: 600;
+  color: #343a40;
+}
+
+.form-control,
+.form-select {
+  border-radius: 7px;
+  padding: 10px 12px;
+}
+
+.form-control:focus,
+.form-select:focus {
+  border-color: #0d6efd;
+  box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.15);
+}
+
+/* Buttons */
+.btn {
+  border-radius: 7px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background-color: #0d6efd;
+  border-color: #0d6efd;
+}
+
+.btn-primary:hover {
+  background-color: #0b5ed7;
+}
+
+/* Payment records table */
+.table {
+  margin-bottom: 0;
+}
+
+.table th {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.table td {
+  vertical-align: middle;
+}
+
+.table-responsive {
+  border-radius: 8px;
+}
+
+/* Status badges */
+.badge {
+  padding: 7px 10px;
+  font-size: 12px;
+}
+
+/* Alerts */
+.alert {
+  border-radius: 8px;
+}
+
+/* Footer */
+.app-footer {
+  margin-top: auto;
+  padding: 18px;
+  text-align: center;
+  background-color: #e9ecef;
+  color: #6c757d;
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .page-heading {
+    padding: 18px 0;
+  }
+
+  .page-heading h2 {
+    font-size: 23px;
+  }
+
+  .card-body {
+    padding: 15px;
+  }
+
+  .table {
+    font-size: 14px;
+  }
+
+  .btn-sm {
+    padding: 5px 8px;
+  }
+}

@@ -1,0 +1,41 @@
+
+/* Global styles */
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f4f7fb;
+  color: #212529;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Consistent form typography */
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+}
+
+/* Navigation section links */
+section,
+[id] {
+  scroll-margin-top: 80px;
+}
+
+/* Prevent long values from breaking the layout */
+table td {
+  overflow-wrap: anywhere;
+}

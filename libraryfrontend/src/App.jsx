@@ -1,10 +1,9 @@
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import axios from "axios";
-
-import Navbar from "./components/Navbar.jsx";
-import LibraryFinePaymentForm from "./components/LibraryFinePaymentForm.jsx";
-import LibraryFinePaymentList from "./components/LibraryFinePaymentList.jsx";
+import Navbar from "./components/Navbar";
+import LibraryFinePaymentForm from "./components/LibraryFinePaymentForm";
+import LibraryFinePaymentList from "./components/LibraryFinePaymentList";
 import "./App.css";
 
 const API_URL = `${
@@ -19,27 +18,25 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
-
   const [searchId, setSearchId] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [searchError, setSearchError] = useState("");
-  const [searchLoading, setSearchLoading] = useState(false);
+  const [filter, setFilter] = useState("all");
+  const [query, setQuery] = useState("");
 
-  const showMessage = (text, type = "success") => {
+  const notify = (text, type = "success") => {
     setMessage(text);
     setMessageType(type);
   };
 
-  // Display all payments
   const fetchPayments = useCallback(async () => {
     setLoading(true);
-
     try {
       const response = await axios.get(`${API_URL}/displayall`);
-      setPayments(response.data);
-    } catch (error) {
-      showMessage(
-        "Unable to load payments. Check the backend port and controller URL.",
+      setPayments(Array.isArray(response.data) ? response.data : []);
+    } catch {
+      notify(
+        "Cannot load records. Check that Spring Boot is running on port 8001.",
         "danger"
       );
     } finally {
@@ -51,32 +48,26 @@ function App() {
     fetchPayments();
   }, [fetchPayments]);
 
-  // Add or update payment
   const handleSubmit = async (formData) => {
     setSaving(true);
     setMessage("");
-
     try {
       if (editData) {
-        await axios.put(
-          `${API_URL}/update/${editData.id}`,
-          formData
-        );
-        showMessage("Fine payment updated successfully.");
-        setEditData(null);
+        await axios.put(`${API_URL}/update/${editData.id}`, formData);
+        notify("Payment updated successfully.");
       } else {
         await axios.post(`${API_URL}/add`, formData);
-        showMessage("Fine payment added successfully.");
+        notify("Payment added successfully.");
       }
 
+      setEditData(null);
       setSearchResult(null);
-      setSearchError("");
       await fetchPayments();
       return true;
     } catch (error) {
-      showMessage(
+      notify(
         error.response?.data?.message ||
-          "Unable to save payment. Check the backend and entered details.",
+          "Could not save payment. Check your backend endpoint and field names.",
         "danger"
       );
       return false;
@@ -85,17 +76,16 @@ function App() {
     }
   };
 
-  // Edit payment
   const handleEdit = (payment) => {
     setEditData(payment);
-    document.getElementById("add-payment")?.scrollIntoView({
+    document.getElementById("payment-form")?.scrollIntoView({
       behavior: "smooth",
+      block: "start",
     });
   };
 
-  // Delete payment
   const handleDelete = async (id) => {
-    if (!window.confirm("Are you sure you want to delete this payment?")) {
+    if (!window.confirm(`Delete payment ID ${id}? This cannot be undone.`)) {
       return;
     }
 
@@ -104,82 +94,89 @@ function App() {
 
     try {
       await axios.delete(`${API_URL}/delete/${id}`);
-      showMessage("Fine payment deleted successfully.");
+      notify(`Payment ID ${id} deleted successfully.`);
 
-      if (editData?.id === id) {
-        setEditData(null);
-      }
-
-      if (String(searchId) === String(id)) {
-        setSearchResult(null);
-        setSearchError("Payment ID not found.");
-      }
+      if (String(editData?.id) === String(id)) setEditData(null);
+      if (String(searchResult?.id) === String(id)) setSearchResult(null);
 
       await fetchPayments();
     } catch (error) {
-      showMessage("Unable to delete payment. Please try again.", "danger");
+      notify(
+        error.response?.data?.message ||
+          "Delete failed. Check the backend DELETE endpoint.",
+        "danger"
+      );
     } finally {
       setDeletingId(null);
     }
   };
 
-  // Find payment by ID
-  const findPayment = async (e) => {
-    e.preventDefault();
+  const handleSearch = async (event) => {
+    event.preventDefault();
     setSearchResult(null);
     setSearchError("");
 
     const id = searchId.trim();
-
     if (!/^[1-9]\d*$/.test(id)) {
-      setSearchError("Please enter a valid Payment ID.");
+      setSearchError("Enter a valid positive payment ID.");
       return;
     }
 
-    setSearchLoading(true);
-
     try {
       const response = await axios.get(`${API_URL}/display/${id}`);
-      const data = response.data;
-
-      if (!data || data.id == null || String(data.id) !== id) {
-        setSearchError("Payment ID not found.");
-      } else {
-        setSearchResult(data);
-      }
+      setSearchResult(response.data);
     } catch (error) {
       setSearchError(
         error.response?.status === 404
-          ? "Payment ID not found."
-          : "Unable to search. Check the backend connection."
+          ? "No payment found with this ID."
+          : "Search failed. Check the backend connection."
       );
-    } finally {
-      setSearchLoading(false);
     }
   };
 
-  const paidCount = payments.filter(
-    (payment) => payment.paid === true
-  ).length;
+  const stats = useMemo(() => {
+    const paid = payments.filter((p) => p.paid === true).length;
+    const unpaid = payments.filter((p) => p.paid !== true).length;
+    const totalAmount = payments.reduce(
+      (sum, p) => sum + (Number(p.fineAmount) || 0),
+      0
+    );
 
-  const unpaidCount = payments.filter(
-    (payment) => payment.paid === false
-  ).length;
+    return { total: payments.length, paid, unpaid, totalAmount };
+  }, [payments]);
+
+  const filteredPayments = useMemo(() => {
+    return payments.filter((p) => {
+      const matchesStatus =
+        filter === "all" ||
+        (filter === "paid" && p.paid === true) ||
+        (filter === "unpaid" && p.paid !== true);
+
+      const text = `${p.id} ${p.cardNumber}`.toLowerCase();
+      return matchesStatus && text.includes(query.toLowerCase().trim());
+    });
+  }, [payments, filter, query]);
 
   return (
     <>
       <Navbar />
 
-      <main id="home" className="container py-4 py-md-5">
-        <div className="page-heading mb-4">
-          <p className="text-primary fw-semibold mb-1">
-            LIBRARY SERVICES
-          </p>
-          <h1 className="fw-bold">Library Fine Payment System</h1>
-          <p className="text-secondary mb-0">
-            Manage library fine payments, update records, and check payment status.
-          </p>
-        </div>
+      <main className="dashboard container-fluid">
+        <section className="welcome-panel">
+          <div>
+            <span className="eyebrow">LIBRARY MANAGEMENT / PAYMENTS</span>
+            <h1>Fine Payment Dashboard</h1>
+            <p>Manage, search, and track library fine payments in one place.</p>
+          </div>
+          <button
+            className="btn btn-light refresh-main"
+            onClick={fetchPayments}
+            disabled={loading}
+          >
+            <i className="bi bi-arrow-clockwise me-2" />
+            {loading ? "Refreshing..." : "Refresh data"}
+          </button>
+        </section>
 
         {message && (
           <div
@@ -188,161 +185,173 @@ function App() {
           >
             {message}
             <button
-              type="button"
               className="btn-close"
+              type="button"
               aria-label="Close"
               onClick={() => setMessage("")}
             />
           </div>
         )}
 
-        {/* Payment Overview */}
-        <section className="mb-4" aria-label="Payment overview">
-          <div className="row g-3">
-            <div className="col-12 col-md-4">
-              <div className="card shadow-sm border-0 p-3 h-100">
-                <span className="text-secondary">Total Payments</span>
-                <h3 className="fw-bold mb-0">{payments.length}</h3>
-              </div>
-            </div>
-
-            <div className="col-12 col-md-4">
-              <div className="card shadow-sm border-0 p-3 h-100">
-                <span className="text-secondary">Paid</span>
-                <h3 className="fw-bold text-success mb-0">{paidCount}</h3>
-              </div>
-            </div>
-
-            <div className="col-12 col-md-4">
-              <div className="card shadow-sm border-0 p-3 h-100">
-                <span className="text-secondary">Not Paid</span>
-                <h3 className="fw-bold text-danger mb-0">{unpaidCount}</h3>
-              </div>
-            </div>
-          </div>
+        <section className="stats-grid">
+          <article className="stat-card">
+            <div className="stat-icon blue"><i className="bi bi-receipt" /></div>
+            <span>Total records</span>
+            <h2>{stats.total}</h2>
+            <small>All payment records</small>
+          </article>
+          <article className="stat-card">
+            <div className="stat-icon green"><i className="bi bi-check-circle" /></div>
+            <span>Paid payments</span>
+            <h2>{stats.paid}</h2>
+            <small>Successfully marked paid</small>
+          </article>
+          <article className="stat-card">
+            <div className="stat-icon orange"><i className="bi bi-clock-history" /></div>
+            <span>Unpaid payments</span>
+            <h2>{stats.unpaid}</h2>
+            <small>Awaiting payment</small>
+          </article>
+          <article className="stat-card">
+            <div className="stat-icon purple"><i className="bi bi-currency-rupee" /></div>
+            <span>Total fine amount</span>
+            <h2>₹{stats.totalAmount.toLocaleString("en-IN", {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}</h2>
+            <small>Across all records</small>
+          </article>
         </section>
 
-        {/* Add or Update Payment */}
-        <section id="add-payment" className="mb-4">
-          <div className="card shadow-sm border-0 p-3 p-md-4">
-            <div className="mb-3">
-              <h4 className="fw-bold mb-1">
-                01. {editData ? "Update Payment" : "Add Fine Payment"}
-              </h4>
-              <p className="text-secondary mb-0">
-                Enter the library card and fine payment details.
+        <section id="payment-form" className="panel form-panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-number">01 / RECORD MANAGEMENT</span>
+              <h2>{editData ? "Update payment" : "Add a fine payment"}</h2>
+              <p>
+                {editData
+                  ? `Editing payment ID ${editData.id}`
+                  : "Enter the details below to create a payment record."}
               </p>
             </div>
-
-            <LibraryFinePaymentForm
-              onSubmit={handleSubmit}
-              editData={editData}
-              onCancel={() => setEditData(null)}
-              saving={saving}
-            />
-          </div>
-        </section>
-
-        {/* Display All Payments */}
-        <section id="payments" className="mb-4">
-          <div className="card shadow-sm border-0 p-3 p-md-4">
-            <div className="mb-3">
-              <h4 className="fw-bold mb-1">02. Display All Payments</h4>
-              <p className="text-secondary mb-0">
-                View, refresh, edit, and delete fine payment records.
-              </p>
-            </div>
-
-            <LibraryFinePaymentList
-              payments={payments}
-              loading={loading}
-              deletingId={deletingId}
-              onEdit={handleEdit}
-              onDelete={handleDelete}
-              onRefresh={fetchPayments}
-            />
-          </div>
-        </section>
-
-        {/* Find Payment by ID */}
-        <section id="find-payment" className="mb-4">
-          <div className="card shadow-sm border-0 p-3 p-md-4">
-            <div className="mb-3">
-              <h4 className="fw-bold mb-1">03. Find Payment by ID</h4>
-              <p className="text-secondary mb-0">
-                Search for a payment using its generated ID.
-              </p>
-            </div>
-
-            <form
-              onSubmit={findPayment}
-              className="row g-2 align-items-center"
-            >
-              <div className="col-12 col-md-8">
-                <input
-                  type="number"
-                  className="form-control"
-                  placeholder="Enter Payment ID"
-                  value={searchId}
-                  onChange={(e) => {
-                    setSearchId(e.target.value);
-                    setSearchResult(null);
-                    setSearchError("");
-                  }}
-                  min="1"
-                  required
-                />
-              </div>
-
-              <div className="col-12 col-md-4">
-                <button
-                  type="submit"
-                  className="btn btn-primary w-100"
-                  disabled={searchLoading}
-                >
-                  {searchLoading ? "Searching..." : "Find Payment"}
-                </button>
-              </div>
-            </form>
-
-            {searchError && (
-              <div className="alert alert-danger mt-3 mb-0" role="alert">
-                {searchError}
-              </div>
+            {editData && (
+              <button
+                className="btn btn-outline-secondary"
+                onClick={() => setEditData(null)}
+              >
+                Cancel edit
+              </button>
             )}
+          </div>
+          <LibraryFinePaymentForm
+            key={editData?.id ?? "new-payment"}
+            editData={editData}
+            saving={saving}
+            onSubmit={handleSubmit}
+            onCancel={() => setEditData(null)}
+          />
+        </section>
 
-            {searchResult && (
-              <div className="mt-4 p-3 border rounded">
-                <h5 className="fw-bold mb-3">Payment Details</h5>
-                <p className="mb-2"><strong>ID:</strong> {searchResult.id}</p>
-                <p className="mb-2">
-                  <strong>Card Number:</strong> {searchResult.cardNumber}
-                </p>
-                <p className="mb-2">
-                  <strong>Fine Amount:</strong>{" "}
-                  {Number(searchResult.fineAmount).toFixed(2)}
-                </p>
-                <p className="mb-2">
-                  <strong>Payment Date:</strong> {searchResult.paymentDate}
-                </p>
-                <p className="mb-3">
-                  <strong>Status:</strong>{" "}
-                  {searchResult.paid ? "Paid" : "Not Paid"}
-                </p>
+        <section id="records" className="panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-number">02 / PAYMENT RECORDS</span>
+              <h2>All payments</h2>
+              <p>Search records, filter payment status, edit, or delete.</p>
+            </div>
+            <span className="record-count">{filteredPayments.length} records</span>
+          </div>
+
+          <div className="toolbar">
+            <div className="search-input">
+              <i className="bi bi-search" />
+              <input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="Search by ID or card number..."
+                aria-label="Search payment records"
+              />
+            </div>
+            <select
+              className="form-select status-filter"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              aria-label="Filter by payment status"
+            >
+              <option value="all">All statuses</option>
+              <option value="paid">Paid only</option>
+              <option value="unpaid">Unpaid only</option>
+            </select>
+          </div>
+
+          <LibraryFinePaymentList
+            payments={filteredPayments}
+            loading={loading}
+            deletingId={deletingId}
+            onEdit={handleEdit}
+            onDelete={handleDelete}
+            onRefresh={fetchPayments}
+          />
+        </section>
+
+        <section id="find-payment" className="panel">
+          <div className="section-heading">
+            <div>
+              <span className="section-number">03 / QUICK LOOKUP</span>
+              <h2>Find a payment</h2>
+              <p>Look up one record using its payment ID.</p>
+            </div>
+          </div>
+
+          <form className="lookup-form" onSubmit={handleSearch}>
+            <input
+              className="form-control"
+              type="number"
+              min="1"
+              required
+              value={searchId}
+              onChange={(e) => setSearchId(e.target.value)}
+              placeholder="Enter payment ID"
+            />
+            <button className="btn btn-primary" type="submit">
+              <i className="bi bi-search me-2" /> Find payment
+            </button>
+          </form>
+
+          {searchError && <div className="alert alert-warning mt-3">{searchError}</div>}
+
+          {searchResult && (
+            <div className="lookup-result">
+              <div>
+                <span className="section-number">PAYMENT #{searchResult.id}</span>
+                <h3>{searchResult.cardNumber}</h3>
+                <p>Payment date: {searchResult.paymentDate}</p>
+                <h4>₹{Number(searchResult.fineAmount).toFixed(2)}</h4>
+                <span className={`status-badge ${searchResult.paid ? "paid" : "unpaid"}`}>
+                  {searchResult.paid ? "Paid" : "Not paid"}
+                </span>
+              </div>
+              <div className="lookup-actions">
                 <button
-                  type="button"
-                  className="btn btn-outline-primary btn-sm"
+                  className="btn btn-outline-primary"
                   onClick={() => handleEdit(searchResult)}
                 >
-                  Edit This Payment
+                  <i className="bi bi-pencil me-2" /> Edit
+                </button>
+                <button
+                  className="btn btn-outline-danger"
+                  onClick={() => handleDelete(searchResult.id)}
+                >
+                  <i className="bi bi-trash me-2" /> Delete
                 </button>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </section>
 
-        <footer className="text-center text-secondary py-4">
-          Library Fine Payment System
+        <footer className="dashboard-footer">
+          <span>Library Fine Payment System</span>
+          <span>Payment management dashboard</span>
         </footer>
       </main>
     </>

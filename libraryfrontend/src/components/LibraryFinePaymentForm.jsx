@@ -1,15 +1,16 @@
 
 import { useEffect, useState } from "react";
 
-const initialForm = {
+const emptyForm = {
   cardNumber: "",
   fineAmount: "",
-  paymentDate: "",
+  paymentDate: new Date().toISOString().slice(0, 10),
   paid: false,
 };
 
-function LibraryFinePaymentForm({ onSubmit, editData, onCancel, saving }) {
-  const [formData, setFormData] = useState(initialForm);
+function LibraryFinePaymentForm({ editData, saving, onSubmit, onCancel }) {
+  const [formData, setFormData] = useState(emptyForm);
+  const [error, setError] = useState("");
 
   useEffect(() => {
     if (editData) {
@@ -17,140 +18,156 @@ function LibraryFinePaymentForm({ onSubmit, editData, onCancel, saving }) {
         cardNumber: editData.cardNumber ?? "",
         fineAmount: editData.fineAmount ?? "",
         paymentDate: editData.paymentDate ?? "",
-        paid: editData.paid ?? false,
+        paid: editData.paid === true,
       });
     } else {
-      setFormData(initialForm);
+      setFormData({ ...emptyForm });
     }
+    setError("");
   }, [editData]);
 
-  const handleChange = (e) => {
-    const { name, value, type, checked } = e.target;
-
+  const handleChange = (event) => {
+    const { name, value, type, checked } = event.target;
     setFormData((previous) => ({
       ...previous,
       [name]: type === "checkbox" ? checked : value,
     }));
   };
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const handleSubmit = async (event) => {
+    event.preventDefault();
+    setError("");
 
     if (!formData.cardNumber.trim()) {
-      alert("Please enter the library card number.");
+      setError("Please enter a library card number.");
       return;
     }
 
     if (
       formData.fineAmount === "" ||
       !Number.isFinite(Number(formData.fineAmount)) ||
-      Number(formData.fineAmount) < 0
+      Number(formData.fineAmount) <= 0
     ) {
-      alert("Please enter a valid, non-negative fine amount.");
+      setError("Fine amount must be greater than zero.");
       return;
     }
 
     if (!formData.paymentDate) {
-      alert("Please select the payment date.");
+      setError("Please select a payment date.");
       return;
     }
 
-    await onSubmit({
-      ...formData,
+    const succeeded = await onSubmit({
       cardNumber: formData.cardNumber.trim(),
       fineAmount: Number(formData.fineAmount),
-      paid: Boolean(formData.paid),
+      paymentDate: formData.paymentDate,
+      paid: formData.paid,
     });
+
+    if (succeeded && !editData) {
+      setFormData({ ...emptyForm });
+    }
   };
 
   return (
     <form onSubmit={handleSubmit}>
-      <div className="mb-3">
-        <label htmlFor="cardNumber" className="form-label">
-          Library Card Number
-        </label>
-        <input
-          id="cardNumber"
-          name="cardNumber"
-          type="text"
-          className="form-control"
-          placeholder="Enter library card number"
-          value={formData.cardNumber}
-          onChange={handleChange}
-          required
-        />
-      </div>
+      {error && <div className="alert alert-danger">{error}</div>}
 
-      <div className="mb-3">
-        <label htmlFor="fineAmount" className="form-label">
-          Fine Amount
-        </label>
-        <input
-          id="fineAmount"
-          name="fineAmount"
-          type="number"
-          className="form-control"
-          placeholder="Enter fine amount"
-          min="0"
-          step="0.01"
-          value={formData.fineAmount}
-          onChange={handleChange}
-          required
-        />
-      </div>
+      <div className="row g-3">
+        <div className="col-12 col-md-6">
+          <label className="form-label" htmlFor="cardNumber">
+            Library card number
+          </label>
+          <input
+            className="form-control"
+            id="cardNumber"
+            name="cardNumber"
+            value={formData.cardNumber}
+            onChange={handleChange}
+            placeholder="e.g. LIB1001"
+            maxLength="50"
+            required
+          />
+        </div>
 
-      <div className="mb-3">
-        <label htmlFor="paymentDate" className="form-label">
-          Payment Date
-        </label>
-        <input
-          id="paymentDate"
-          name="paymentDate"
-          type="date"
-          className="form-control"
-          value={formData.paymentDate}
-          onChange={handleChange}
-          required
-        />
-      </div>
+        <div className="col-12 col-md-6">
+          <label className="form-label" htmlFor="fineAmount">
+            Fine amount (₹)
+          </label>
+          <input
+            className="form-control"
+            id="fineAmount"
+            name="fineAmount"
+            type="number"
+            min="0.01"
+            step="0.01"
+            value={formData.fineAmount}
+            onChange={handleChange}
+            placeholder="Enter amount"
+            required
+          />
+        </div>
 
-      <div className="form-check mb-3">
-        <input
-          id="paid"
-          name="paid"
-          type="checkbox"
-          className="form-check-input"
-          checked={formData.paid}
-          onChange={handleChange}
-        />
-        <label htmlFor="paid" className="form-check-label">
-          Fine Paid
-        </label>
-      </div>
+        <div className="col-12 col-md-6">
+          <label className="form-label" htmlFor="paymentDate">
+            Payment date
+          </label>
+          <input
+            className="form-control"
+            id="paymentDate"
+            name="paymentDate"
+            type="date"
+            value={formData.paymentDate}
+            onChange={handleChange}
+            required
+          />
+        </div>
 
-      <div className="d-flex gap-2">
-        <button
-          type="submit"
-          className="btn btn-primary"
-          disabled={saving}
-        >
-          {saving
-            ? "Saving..."
-            : editData
-              ? "Update Payment"
-              : "Add Payment"}
-        </button>
+        <div className="col-12 col-md-6">
+          <div className="status-input">
+            <div>
+              <label className="form-label mb-1" htmlFor="paid">
+                Payment completed
+              </label>
+              <p className="text-secondary small mb-0">
+                Turn on if the fine has been paid.
+              </p>
+            </div>
+            <div className="form-check form-switch">
+              <input
+                className="form-check-input"
+                id="paid"
+                name="paid"
+                type="checkbox"
+                role="switch"
+                checked={formData.paid}
+                onChange={handleChange}
+              />
+            </div>
+          </div>
+        </div>
 
-        {editData && (
-          <button
-            type="button"
-            className="btn btn-secondary"
-            onClick={onCancel}
-            disabled={saving}
-          >
-            Cancel
+        <div className="col-12 d-flex gap-2 flex-wrap mt-4">
+          <button className="btn btn-primary" type="submit" disabled={saving}>
+            <i className={`bi ${saving ? "bi-hourglass-split" : editData ? "bi-check2-circle" : "bi-plus-circle"} me-2`} />
+            {saving
+              ? "Saving..."
+              : editData
+                ? "Update payment"
+                : "Add payment"}
           </button>
-        )}
+
+          {editData && (
+            <button
+              className="btn btn-outline-secondary"
+              type="button"
+              onClick={onCancel}
+              disabled={saving}
+            >
+              Cancel
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );

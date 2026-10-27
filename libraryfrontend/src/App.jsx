@@ -18,9 +18,15 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+
   const [searchId, setSearchId] = useState("");
   const [searchResult, setSearchResult] = useState(null);
   const [searchError, setSearchError] = useState("");
+
+  const [deleteId, setDeleteId] = useState("");
+  const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
+
   const [filter, setFilter] = useState("all");
   const [query, setQuery] = useState("");
 
@@ -31,6 +37,7 @@ function App() {
 
   const fetchPayments = useCallback(async () => {
     setLoading(true);
+
     try {
       const response = await axios.get(`${API_URL}/displayall`);
       setPayments(Array.isArray(response.data) ? response.data : []);
@@ -51,6 +58,7 @@ function App() {
   const handleSubmit = async (formData) => {
     setSaving(true);
     setMessage("");
+
     try {
       if (editData) {
         await axios.put(`${API_URL}/update/${editData.id}`, formData);
@@ -67,7 +75,7 @@ function App() {
     } catch (error) {
       notify(
         error.response?.data?.message ||
-          "Could not save payment. Check your backend endpoint and field names.",
+          "Could not save payment. Check the backend and entered details.",
         "danger"
       );
       return false;
@@ -78,34 +86,64 @@ function App() {
 
   const handleEdit = (payment) => {
     setEditData(payment);
+
     document.getElementById("payment-form")?.scrollIntoView({
       behavior: "smooth",
       block: "start",
     });
   };
 
+  // Delete a payment from the table or search result.
   const handleDelete = async (id) => {
-    if (!window.confirm(`Delete payment ID ${id}? This cannot be undone.`)) {
-      return;
+    if (
+      !window.confirm(
+        `Are you sure you want to delete payment ID ${id}? This cannot be undone.`
+      )
+    ) {
+      return false;
     }
 
     setDeletingId(id);
     setMessage("");
 
     try {
+      // Verify that the record exists first.
+      const response = await axios.get(`${API_URL}/display/${id}`);
+
+      if (
+        !response.data ||
+        response.data.id == null ||
+        String(response.data.id) !== String(id)
+      ) {
+        notify(`Payment ID ${id} not found.`, "danger");
+        return false;
+      }
+
       await axios.delete(`${API_URL}/delete/${id}`);
+
       notify(`Payment ID ${id} deleted successfully.`);
 
-      if (String(editData?.id) === String(id)) setEditData(null);
-      if (String(searchResult?.id) === String(id)) setSearchResult(null);
+      if (String(editData?.id) === String(id)) {
+        setEditData(null);
+      }
+
+      if (String(searchResult?.id) === String(id)) {
+        setSearchResult(null);
+      }
 
       await fetchPayments();
+      return true;
     } catch (error) {
-      notify(
-        error.response?.data?.message ||
-          "Delete failed. Check the backend DELETE endpoint.",
-        "danger"
-      );
+      if (error.response?.status === 404) {
+        notify(`Payment ID ${id} not found.`, "danger");
+      } else {
+        notify(
+          error.response?.data?.message ||
+            `Could not delete payment ID ${id}. Check the backend connection.`,
+          "danger"
+        );
+      }
+      return false;
     } finally {
       setDeletingId(null);
     }
@@ -117,6 +155,7 @@ function App() {
     setSearchError("");
 
     const id = searchId.trim();
+
     if (!/^[1-9]\d*$/.test(id)) {
       setSearchError("Enter a valid positive payment ID.");
       return;
@@ -124,36 +163,122 @@ function App() {
 
     try {
       const response = await axios.get(`${API_URL}/display/${id}`);
-      setSearchResult(response.data);
+
+      if (
+        !response.data ||
+        response.data.id == null ||
+        String(response.data.id) !== id
+      ) {
+        setSearchError(`Payment ID ${id} not found.`);
+      } else {
+        setSearchResult(response.data);
+      }
     } catch (error) {
       setSearchError(
         error.response?.status === 404
-          ? "No payment found with this ID."
+          ? `Payment ID ${id} not found.`
           : "Search failed. Check the backend connection."
       );
+    }
+  };
+
+  // Delete directly by entering an ID.
+  const handleDeleteById = async (event) => {
+    event.preventDefault();
+    setDeleteError("");
+    setMessage("");
+
+    const id = deleteId.trim();
+
+    if (!/^[1-9]\d*$/.test(id)) {
+      setDeleteError("Enter a valid positive payment ID.");
+      return;
+    }
+
+    setDeleteLoading(true);
+
+    try {
+      // Check existence before asking to delete.
+      const response = await axios.get(`${API_URL}/display/${id}`);
+      const payment = response.data;
+
+      if (
+        !payment ||
+        payment.id == null ||
+        String(payment.id) !== id
+      ) {
+        setDeleteError(`Payment ID ${id} not found.`);
+        return;
+      }
+
+      if (
+        !window.confirm(
+          `Are you sure you want to delete payment ID ${id}? This cannot be undone.`
+        )
+      ) {
+        return;
+      }
+
+      await axios.delete(`${API_URL}/delete/${id}`);
+
+      notify(`Payment ID ${id} deleted successfully.`);
+      setDeleteId("");
+
+      if (String(searchResult?.id) === id) {
+        setSearchResult(null);
+      }
+
+      if (String(editData?.id) === id) {
+        setEditData(null);
+      }
+
+      await fetchPayments();
+    } catch (error) {
+      if (error.response?.status === 404) {
+        setDeleteError(`Payment ID ${id} not found.`);
+      } else {
+        notify(
+          error.response?.data?.message ||
+            "Unable to delete payment. Check the backend connection.",
+          "danger"
+        );
+      }
+    } finally {
+      setDeleteLoading(false);
     }
   };
 
   const stats = useMemo(() => {
     const paid = payments.filter((p) => p.paid === true).length;
     const unpaid = payments.filter((p) => p.paid !== true).length;
+
     const totalAmount = payments.reduce(
       (sum, p) => sum + (Number(p.fineAmount) || 0),
       0
     );
 
-    return { total: payments.length, paid, unpaid, totalAmount };
+    return {
+      total: payments.length,
+      paid,
+      unpaid,
+      totalAmount,
+    };
   }, [payments]);
 
   const filteredPayments = useMemo(() => {
-    return payments.filter((p) => {
+    return payments.filter((payment) => {
       const matchesStatus =
         filter === "all" ||
-        (filter === "paid" && p.paid === true) ||
-        (filter === "unpaid" && p.paid !== true);
+        (filter === "paid" && payment.paid === true) ||
+        (filter === "unpaid" && payment.paid !== true);
 
-      const text = `${p.id} ${p.cardNumber}`.toLowerCase();
-      return matchesStatus && text.includes(query.toLowerCase().trim());
+      const text =
+        `${payment.id} ${payment.cardNumber}`.toLowerCase();
+
+      return (
+        matchesStatus &&
+        text.includes(query.toLowerCase().trim())
+      );
     });
   }, [payments, filter, query]);
 
@@ -162,14 +287,17 @@ function App() {
       <Navbar />
 
       <main className="dashboard container-fluid">
-        <section className="welcome-panel">
+        <section id="home" className="welcome-panel">
           <div>
-            <span className="eyebrow">LIBRARY MANAGEMENT / PAYMENTS</span>
             <h1>Fine Payment Dashboard</h1>
-            <p>Manage, search, and track library fine payments in one place.</p>
+            <p>
+              Manage, search, and track library fine payments in one place.
+            </p>
           </div>
+
           <button
             className="btn btn-light refresh-main"
+            type="button"
             onClick={fetchPayments}
             disabled={loading}
           >
@@ -195,30 +323,44 @@ function App() {
 
         <section className="stats-grid">
           <article className="stat-card">
-            <div className="stat-icon blue"><i className="bi bi-receipt" /></div>
+            <div className="stat-icon blue">
+              <i className="bi bi-receipt" />
+            </div>
             <span>Total records</span>
             <h2>{stats.total}</h2>
             <small>All payment records</small>
           </article>
+
           <article className="stat-card">
-            <div className="stat-icon green"><i className="bi bi-check-circle" /></div>
+            <div className="stat-icon green">
+              <i className="bi bi-check-circle" />
+            </div>
             <span>Paid payments</span>
             <h2>{stats.paid}</h2>
             <small>Successfully marked paid</small>
           </article>
+
           <article className="stat-card">
-            <div className="stat-icon orange"><i className="bi bi-clock-history" /></div>
+            <div className="stat-icon orange">
+              <i className="bi bi-clock-history" />
+            </div>
             <span>Unpaid payments</span>
             <h2>{stats.unpaid}</h2>
             <small>Awaiting payment</small>
           </article>
+
           <article className="stat-card">
-            <div className="stat-icon purple"><i className="bi bi-currency-rupee" /></div>
+            <div className="stat-icon purple">
+              <i className="bi bi-currency-rupee" />
+            </div>
             <span>Total fine amount</span>
-            <h2>₹{stats.totalAmount.toLocaleString("en-IN", {
-              minimumFractionDigits: 2,
-              maximumFractionDigits: 2,
-            })}</h2>
+            <h2>
+              ₹
+              {stats.totalAmount.toLocaleString("en-IN", {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2,
+              })}
+            </h2>
             <small>Across all records</small>
           </article>
         </section>
@@ -226,23 +368,27 @@ function App() {
         <section id="payment-form" className="panel form-panel">
           <div className="section-heading">
             <div>
-              <span className="section-number">01 / RECORD MANAGEMENT</span>
-              <h2>{editData ? "Update payment" : "Add a fine payment"}</h2>
+              <h2>
+                {editData ? "Update payment" : "Add a fine payment"}
+              </h2>
               <p>
                 {editData
                   ? `Editing payment ID ${editData.id}`
                   : "Enter the details below to create a payment record."}
               </p>
             </div>
+
             {editData && (
               <button
                 className="btn btn-outline-secondary"
+                type="button"
                 onClick={() => setEditData(null)}
               >
                 Cancel edit
               </button>
             )}
           </div>
+
           <LibraryFinePaymentForm
             key={editData?.id ?? "new-payment"}
             editData={editData}
@@ -255,11 +401,15 @@ function App() {
         <section id="records" className="panel">
           <div className="section-heading">
             <div>
-              <span className="section-number">02 / PAYMENT RECORDS</span>
               <h2>All payments</h2>
-              <p>Search records, filter payment status, edit, or delete.</p>
+              <p>
+                Search records, filter payment status, edit, or delete.
+              </p>
             </div>
-            <span className="record-count">{filteredPayments.length} records</span>
+
+            <span className="record-count">
+              {filteredPayments.length} records
+            </span>
           </div>
 
           <div className="toolbar">
@@ -267,15 +417,16 @@ function App() {
               <i className="bi bi-search" />
               <input
                 value={query}
-                onChange={(e) => setQuery(e.target.value)}
+                onChange={(event) => setQuery(event.target.value)}
                 placeholder="Search by ID or card number..."
                 aria-label="Search payment records"
               />
             </div>
+
             <select
               className="form-select status-filter"
               value={filter}
-              onChange={(e) => setFilter(e.target.value)}
+              onChange={(event) => setFilter(event.target.value)}
               aria-label="Filter by payment status"
             >
               <option value="all">All statuses</option>
@@ -297,7 +448,6 @@ function App() {
         <section id="find-payment" className="panel">
           <div className="section-heading">
             <div>
-              <span className="section-number">03 / QUICK LOOKUP</span>
               <h2>Find a payment</h2>
               <p>Look up one record using its payment ID.</p>
             </div>
@@ -308,43 +458,112 @@ function App() {
               className="form-control"
               type="number"
               min="1"
+              step="1"
               required
               value={searchId}
-              onChange={(e) => setSearchId(e.target.value)}
+              onChange={(event) => setSearchId(event.target.value)}
               placeholder="Enter payment ID"
             />
+
             <button className="btn btn-primary" type="submit">
-              <i className="bi bi-search me-2" /> Find payment
+              <i className="bi bi-search me-2" />
+              Find payment
             </button>
           </form>
 
-          {searchError && <div className="alert alert-warning mt-3">{searchError}</div>}
+          {searchError && (
+            <div className="alert alert-warning mt-3">
+              {searchError}
+            </div>
+          )}
 
           {searchResult && (
             <div className="lookup-result">
               <div>
-                <span className="section-number">PAYMENT #{searchResult.id}</span>
-                <h3>{searchResult.cardNumber}</h3>
+                <h3>Payment #{searchResult.id}</h3>
+                <p>Card number: {searchResult.cardNumber}</p>
                 <p>Payment date: {searchResult.paymentDate}</p>
-                <h4>₹{Number(searchResult.fineAmount).toFixed(2)}</h4>
-                <span className={`status-badge ${searchResult.paid ? "paid" : "unpaid"}`}>
+                <h4>
+                  ₹{Number(searchResult.fineAmount).toFixed(2)}
+                </h4>
+
+                <span
+                  className={`status-badge ${
+                    searchResult.paid ? "paid" : "unpaid"
+                  }`}
+                >
                   {searchResult.paid ? "Paid" : "Not paid"}
                 </span>
               </div>
+
               <div className="lookup-actions">
                 <button
                   className="btn btn-outline-primary"
+                  type="button"
                   onClick={() => handleEdit(searchResult)}
                 >
-                  <i className="bi bi-pencil me-2" /> Edit
+                  <i className="bi bi-pencil me-2" />
+                  Edit
                 </button>
+
                 <button
                   className="btn btn-outline-danger"
+                  type="button"
                   onClick={() => handleDelete(searchResult.id)}
+                  disabled={deletingId === searchResult.id}
                 >
-                  <i className="bi bi-trash me-2" /> Delete
+                  <i className="bi bi-trash me-2" />
+                  {deletingId === searchResult.id
+                    ? "Deleting..."
+                    : "Delete"}
                 </button>
               </div>
+            </div>
+          )}
+        </section>
+
+        <section id="delete-payment" className="panel">
+          <div className="section-heading">
+            <div>
+              <h2>Delete payment by ID</h2>
+              <p>
+                Enter the ID of the payment you want to delete.
+              </p>
+            </div>
+          </div>
+
+          <form
+            className="lookup-form"
+            onSubmit={handleDeleteById}
+          >
+            <input
+              className="form-control"
+              type="number"
+              min="1"
+              step="1"
+              required
+              value={deleteId}
+              onChange={(event) => {
+                setDeleteId(event.target.value);
+                setDeleteError("");
+              }}
+              placeholder="Enter payment ID to delete"
+              aria-label="Payment ID to delete"
+            />
+
+            <button
+              className="btn btn-danger"
+              type="submit"
+              disabled={deleteLoading || deletingId !== null}
+            >
+              <i className="bi bi-trash me-2" />
+              {deleteLoading ? "Deleting..." : "Delete payment"}
+            </button>
+          </form>
+
+          {deleteError && (
+            <div className="alert alert-danger mt-3" role="alert">
+              {deleteError}
             </div>
           )}
         </section>
